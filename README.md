@@ -26,10 +26,10 @@ qcloud-iot-sdk-tecent-at-based 面向使用支持腾讯MQTT AT指令的模组(2/
 | README.md       | SDK使用说明 |
 
 ### 定制腾讯MQTT AT指令模组说明
-  腾讯定义的MQTT AT指令见文档目录，模组侧把MQTT协议封装在模组固件中，各家模组商遵循统一的MQTT通信的AT指令名称、参数及命令返回，并实现了通过设置的设备参数及鉴权方式实现和平台的鉴权。已经支持的[模组列表](https://cloud.tencent.com/document/product/634/)。
+  腾讯定义的MQTT AT指令见docs目录下的《腾讯云IoT AT指令集.pdf》，模组侧把MQTT协议封装在模组固件中，各家模组商遵循统一的MQTT通信的AT指令名称、参数及命令返回，并实现了通过设置的设备参数及鉴权方式实现和平台的鉴权。参考文档[设备开发](https://cloud.tencent.com/document/product/1081/34740)。
 
 ##### 1.1 使用MQTT AT定制模组实现MQTT通信
-AT_SDK中module_api_inf.c把docs目录下的《Tencent_AT_instruction_set_V3.0.2.pdf》各AT指令独立实现为单独的函数，在mqtt_sample.c中示例了如何组合这些命令序列，包括初始化、模组上下电、联网/注册网络、设备信息写入、MQTT连接、主题订阅、消息发布、订阅消息回调处理。如果不源移植AT_SDK，可以基于如下AT指令交互流程使用MQTT功能：
+AT_SDK中module_api_inf.c把docs目录下的《腾讯云IoT AT指令集.pdf》各AT指令独立实现为单独的函数，在mqtt_sample.c中示例了如何组合这些命令序列，包括初始化、模组上下电、联网/注册网络、设备信息写入、MQTT连接、主题订阅、消息发布、订阅消息回调处理。如果不源移植AT_SDK，可以基于如下AT指令交互流程使用MQTT功能：
 
 ![](https://main.qcloudimg.com/raw/81942fc551f6df8696490ffd5985cce9.jpg)
 
@@ -96,7 +96,7 @@ hal层对外的API接口及HAL层宏开关控制。
 | 3    | at_send_data                   | AT串口发送接口                             |
 
 ##### 2.4 **module_api_inf.c**：
-配网/注网 API业务适配,该源文件基于腾讯定义的AT指令实现了MQTT的交互，但有一个关于联网/注网的API(module_register_network)需要根据模组适配。代码基于[ESP8266腾讯定制AT固件](http://git.code.oa.com/iotcloud_teamIII/qcloud-iot-at-esp8266-wifi.git)示例了WIFI直连的方式连接网络，但更常用的场景是根据特定事件（譬如按键）触发配网（softAP/一键配网），这块的逻辑各具体业务逻辑自行实现。ESP8266有封装配网指令和示例APP。对于蜂窝模组，则是使用特定的网络注册指令。开发者参照module_handshake应用AT-SDK的AT框架添加和模组的AT指令交互。 
+配网/注网 API业务适配,该源文件基于腾讯定义的AT指令实现了MQTT的交互，但有一个关于联网/注网的API(module_register_network)需要根据模组适配。代码基于[ESP8266腾讯定制AT固件](https://main.qcloudimg.com/raw/6811fc7631dcf0ce5509ccbdba5c72b7.zip)示例了WIFI直连的方式连接网络，但更常用的场景是根据特定事件（譬如按键）触发配网（softAP/一键配网），这块的逻辑各具体业务逻辑自行实现。ESP8266有封装配网指令和示例APP。对于蜂窝模组，则是使用特定的网络注册指令。开发者参照module_handshake应用AT-SDK的AT框架添加和模组的AT指令交互。 
 
 ```	
 //模组联网（NB/2/3/4G注册网络）、wifi配网（一键配网/softAP）暂时很难统一,需要用户根据具体模组适配。
@@ -195,8 +195,8 @@ Smaple目录一共有四个示例，分别是mqtt_sample.c、shadow_sample.c、d
  关于 SDK 的更多使用方式及接口了解, 参见 qcloud_iot_api_export.h
 
 ### AT模组PC端python测试工具
- 开发阶段，可以使用tools目录下的python工具QCloud_AT_cmd_test_tool.py对支持腾讯IoT AT指令的模组进行基本验证和测试。
- 使用示例： python QCloud_AT_cmd_test_tool.py -p COM5 -a ESP8266 -m HUB
- 具体用法请查看QCloud_AT_cmd_test_tool.py文件README部分
+ 开发阶段，可以使用tools目录下的PC端工具QCloud_IoT_AT_Test_Tool对支持腾讯IoT AT指令的模组进行基本验证和测试。
+ 使用示例： python QCloud_IoT_AT_Test_Tool.py -p COM5 -a ESP8266 -m MQTT
+ 具体使用说明请查看QCloud_IoT_AT_Test_Tool的README文件
 
 
