@@ -648,7 +648,7 @@ class IoTBaseATCmd:
             return False
 
         hint = "AT+TCMQTTPUBL Send msg"
-        ok_reply = 'OK'
+        ok_reply = '+TCMQTTPUBL:OK'
         if not self.serial.do_one_at_cmd(msg, ok_reply, hint, self.err_list, 20*self.cmd_timeout):
             print('ERR: pub long msg failed: ', msg)
             return False
@@ -2393,7 +2393,7 @@ def interactive_test():
     ser = SerialATClient(raw_mode=True)
     ser.start_read()
     while True:
-        cmd = input("CMD:").strip('\n')
+        cmd = input().strip('\n')
         if cmd.lower() == 'quit':
             ser.close_port()
             sys.exit(0)

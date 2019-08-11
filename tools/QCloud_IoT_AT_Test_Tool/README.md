@@ -21,11 +21,12 @@ pip install paho-mqtt
 
 IoT Hub平台设备测试还需要到控制台权限列表创建一个具备发布和订阅权限的“data” topic
 并确保“control” topic只有订阅权限，“event” topic只有发布权限
-| MQTT Topic         | 操作权限                                      |
-| ------------------ | --------------------------------------------- |
-| control  | 订阅权限 |
-| event  | 发布权限 |
-| data  | 订阅和发布权限 |
+
+| MQTT Topic       | 操作权限                                  |
+| ---------------- | --------------------------------------- |
+| control          | 订阅权限 |
+| event            | 发布权限 |
+| data             | 订阅和发布权限 |
 
 对于支持证书设备指令的模组测试，还需要创建证书设备，并到工具配置文件里面`[HUB-CERT1]`部分进行配置
 对于支持动态注册指令的模组测试，还需要将设备的产品密钥及新设备名字配置到文件里面`[HUB-PRD1]`部分
@@ -64,10 +65,11 @@ AT+TCMQTTPUB="S3EUVBRJLB/device1/data",0,"{\"action\":\"publish_test\",\"count\"
 模组须确保云端收到的payload为{"action":"publish_test","count":1}
 
 工具目前支持三种转义字符处理方式
-| 转义字符方式                  | 含义                                          |
-| ----------------------------- | --------------------------------------------- |
-| add_no_escapes  | 对源数据不加任何转义处理 |
-| add_escapes_for_quote | 对源数据里面的双引号“前面添加转义字符\ |
+
+| 转义字符方式                   | 含义                                          |
+| --------------------------- | --------------------------------------------- |
+| add_no_escapes              | 对源数据不加任何转义处理 |
+| add_escapes_for_quote       | 对源数据里面的双引号“前面添加转义字符\ |
 | add_escapes_for_quote_comma | 对源数据里面的双引号“和逗号,前面添加转义字符\ |
 
 ### 6. 使用示例：
@@ -80,12 +82,12 @@ AT+TCMQTTPUB="S3EUVBRJLB/device1/data",0,"{\"action\":\"publish_test\",\"count\"
 对连接到串口COM5的M5311模组进行MQTT AT指令集自动化测试：
   python QCloud_IoT_AT_Test_Tool.py -p COM5 -a M5311 -m MQTT  
 
-对连接到串口COM5的N21模组进行IoT Hub平台100次MQTT收发消息循环测试：
-  python QCloud_IoT_AT_Test_Tool.py -p COM5 -a N21 -m HUB -n 100
+对连接到串口COM5的L206模组进行IoT Hub平台100次MQTT收发消息循环测试：
+  python QCloud_IoT_AT_Test_Tool.py -p COM5 -a L206 -m HUB -n 100
 
-对连接到串口COM5的ESP8266模组进行WiFi配网及IoT Explorer设备绑定测试：
-  python QCloud_IoT_AT_Test_Tool.py -p COM5 -a ESP8266 -m WIFI
+对连接到串口/dev/ttyUSB0的ESP8266模组进行WiFi配网及IoT Explorer设备绑定测试：
+  python QCloud_IoT_AT_Test_Tool.py -p /dev/ttyUSB0 -a ESP8266 -m WIFI
 
 ### 7. 注意事项
-1. 本工具可以覆盖大部分指令的自动化测试，但是对于部分指令功能，仍需要通过CLI模式进行手动测试，比如设备信息设置成功之后，需保存在FLASH中，在断电后仍然可以读取到，该项操作需要手动进行测试
+1. 本工具可以覆盖大部分指令的自动化测试，但是对于部分指令功能，仍需要通过CLI模式进行手动测试，比如AT命令参数的及返回数据的格式校验等，以及设备信息设置成功之后，需保存在FLASH中，在断电后仍然可以读取到，该项操作需要手动进行测试
 2. 对本工具有使用疑问，可以直接阅读修改python源代码，或者联系Spike Lin(spikelin@tencent.com)
