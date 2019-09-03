@@ -3,7 +3,7 @@
 
 '''
 Author: Spike Lin(spikelin@tencent.com)
-Date： 2019-07-26
+Date： 2019-09-03
 '''
 
 ######################## README ###################################
@@ -13,7 +13,7 @@ Date： 2019-07-26
 # 使用环境：基于python3和pyserial/paho-mqtt模块
 ######################## README ###################################
 
-Tool_Version = 'v1.1'
+Tool_Version = 'v1.2'
 
 import threading
 import serial
@@ -59,6 +59,15 @@ def get_hub_test_msg():
     "time":%d,
     "position":"pos-%d"}''' % ('test', int(time.time()), position)
     print(">>> publish test msg", HubTestMsg)
+    return HubTestMsg.replace(' ', '')
+
+def get_hub_test_long_msg():
+    position = random.randint(1, 10000)
+    HubTestMsg = '''{"action":"%s",
+    "time":%d,
+    "text":"%s"
+    "position":"pos-%d"}''' % ('test', int(time.time()), HubTestLongMsg, position)
+    # print(">>> publish test msg", HubTestMsg)
     return HubTestMsg.replace(' ', '')
 
 # IoT Explorer 测试 ############################################
@@ -464,6 +473,18 @@ class IoTBaseATCmd:
             self.err_list = g_at_module_default_params['err_list']
             self.escapes_method = g_at_module_default_params['add_escapes']
 
+        try:
+            self.support_multiline_payload = config_file.get('MOD-' + at_module, 'support_multiline_payload').lower()
+        except:
+            #print("Exceptions when get support_multiline_payload from config file. Using default: yes")
+            self.support_multiline_payload = 'yes'
+
+        try:
+            self.conn_mqtt_before_ota = config_file.get('MOD-' + at_module, 'conn_mqtt_before_ota').lower()
+        except:
+            #print("Exceptions when get conn_mqtt_before_ota from config file. Using default: no")
+            self.conn_mqtt_before_ota = 'no'
+
         print("module:", self.at_module, self.cmd_timeout, self.at_cmd_max_len, self.err_list, self.escapes_method)
         self.mqtt_state = 'INIT'
         self.mqtt_urc_recv = {'+TCMQTTDISCON': False,
@@ -471,7 +492,10 @@ class IoTBaseATCmd:
                               '+TCMQTTRECONNECTED': False}
 
     def add_escapes(self, raw_str):
-        return g_at_escapes_method[self.escapes_method](raw_str)
+        if self.support_multiline_payload == 'yes':
+            return g_at_escapes_method[self.escapes_method](raw_str)
+        else:
+            return g_at_escapes_method[self.escapes_method](raw_str).replace('\n', '')
 
     def get_sysram(self):
         if self.at_module != 'ESP8266':
@@ -910,7 +934,12 @@ class IoTBaseATCmd:
                 print("Invalid OTA FW data reply:", rep)
                 return False
 
-            data_raw = self.ota_data_queue.get()
+            try:
+                data_raw = self.ota_data_queue.get(timeout=10)
+            except queue.Empty:
+                print("OTA data Queue Timeout")
+                break
+
             this_read_size, i = self.ota_parse_fw_data(data_raw)
             if this_read_size == 0:
                 print("Invalid FW data size")
@@ -1003,13 +1032,15 @@ class IoTBaseATCmd:
         # AT+TCREGNET=0,1,"CMNET" and AT+TCREGNET=0,0
         if state == 1:
             cmd = "AT+TCREGNET=0,1," + apn
+            ok_reply = '+TCREGNET:0,NET_OK'
         else:
             cmd = "AT+TCREGNET=0,0"
+            ok_reply = '+TCREGNET:0,NET_CLOSE'
 
-        ok_reply = 'OK'
+        err_list = self.err_list + ['NET_FAIL']
         hint = cmd
 
-        return self.serial.do_one_at_cmd(cmd, ok_reply, hint, self.err_list, self.cmd_timeout)
+        return self.serial.do_one_at_cmd(cmd, ok_reply, hint, err_list, self.cmd_timeout)
 
     def prdinfo_test(self):
         cmd = 'AT+TCPRDINFOSET=?'
@@ -1070,11 +1101,29 @@ class IoTBaseATCmd:
         else:
             return True
 
+    def certcheck_setup(self, cert_name):
+        # AT+TCCERTCHECK="cert_name"
+        cmd = '''AT+TCCERTCHECK="%s"''' % (cert_name)
+        ok_reply = '+TCCERTCHECK:OK'
+        hint = cmd
+
+        return self.serial.do_one_at_cmd(cmd, ok_reply, hint, self.err_list, self.cmd_timeout)
+
+    def certdel_setup(self, cert_name):
+        # AT+TCCERTDEL="cert_name"
+        cmd = '''AT+TCCERTDEL="%s"''' % (cert_name)
+        ok_reply = '+TCCERTDEL:OK'
+        hint = cmd
+
+        return self.serial.do_one_at_cmd(cmd, ok_reply, hint, self.err_list, self.cmd_timeout)
+
+
 class IoTHubATTest(IoTBaseATCmd):
     def __init__(self, at_module='ESP8266'):
         super(IoTHubATTest, self).__init__(at_module)
         self.sys_time = 0
         self.report_file = None
+        self.hub_payload_queue = queue.Queue()
 
     def parse_sys_time(self, topic, payload):
         try:
@@ -1124,7 +1173,8 @@ class IoTHubATTest(IoTBaseATCmd):
         while send_cnt < loop_cnt:
             logging.info("------IoT Hub MQTT QoS1 loop test cnt: %d" % send_cnt)
             send_time = time.time()
-            loop_test_last_msg = get_hub_test_msg().replace(' ', '').replace('\n', '')
+            loop_test_last_msg = get_hub_test_long_msg().replace(' ', '').replace('\n', '')
+
             ret = self.publish_normal_msg('data', 1, loop_test_last_msg)
             send_cnt += 1
             if not ret:
@@ -1189,9 +1239,6 @@ class IoTHubATTest(IoTBaseATCmd):
             if not self.mqtt_connect():
                 break
 
-            if not self.subscribe_normal_topic('data', 0, self.default_topic_handler):
-                break
-
             # loop test
             while loop:
                 if set_loop_cnt == 0:
@@ -1234,7 +1281,8 @@ class IoTHubATTest(IoTBaseATCmd):
             try:
                 recv_payload = self.hub_payload_queue.get(timeout=2 * self.cmd_timeout)
                 recv_timeout_cnt = 0
-                if recv_payload == sent_payload or recv_payload.replace('\n', '') == sent_payload.replace('\n', ''):
+                if recv_payload == sent_payload \
+                        or recv_payload.replace('\n', '').replace(' ', '') == sent_payload.replace('\n', '').replace(' ', ''):
                     print("Correct return MQTT msg:", recv_payload)
                     return True
                 else:
@@ -1393,7 +1441,7 @@ class IoTHubATTest(IoTBaseATCmd):
             self.log_record("##### MQTT订阅指令执行失败")
             cmd_err_cnt += 1
 
-        send_payload = "Hello world!"
+        send_payload = "Hello_From_"+self.at_module
         if not self.publish_normal_msg('data', 0, send_payload):
             self.serial.output_record(self.report_file)
             self.log_record("##### MQTT QoS0发布消息指令执行失败")
@@ -1411,19 +1459,20 @@ class IoTHubATTest(IoTBaseATCmd):
         send_payload = get_hub_test_msg()
         if not self.publish_normal_msg('data', 1, send_payload):
             self.serial.output_record(self.report_file)
-            self.log_record("##### MQTT QoS1发布多行JSON消息指令执行失败")
+            self.log_record("##### MQTT QoS1发布JSON消息指令执行失败")
             cmd_err_cnt += 1
         elif not self.wait_for_pub_msg_return(send_payload):
             self.serial.output_record(self.report_file)
-            self.log_record("##### MQTT 接收多行JSON消息失败")
+            self.log_record("##### MQTT 接收JSON消息失败")
             cmd_err_cnt += 1
 
         HubTestTopic = '''%s/%s/data''' % (self.product_id, self.device_name)
-        if not self.publish_long_msg(HubTestTopic, 1, HubTestLongMsg):
+        send_payload = get_hub_test_long_msg()
+        if not self.publish_long_msg(HubTestTopic, 1, send_payload):
             self.serial.output_record(self.report_file)
             self.log_record("##### MQTT QoS1发布长消息指令执行失败")
             cmd_err_cnt += 1
-        elif not self.wait_for_pub_msg_return(HubTestLongMsg):
+        elif not self.wait_for_pub_msg_return(send_payload):
             self.serial.output_record(self.report_file)
             self.log_record("##### MQTT 接收长消息失败")
             cmd_err_cnt += 1
@@ -1482,45 +1531,43 @@ class IoTHubATTest(IoTBaseATCmd):
         cmd_err_cnt = 0
 
         # 这里使用同名设备通过PAHO-MQTT客户端接入后台，会导致AT模组的设备连接被踢掉，模拟设备断线重连
-        IoTMQTTClient().do_one_connect(Hub_Product_ID, Hub_Device_Name, Hub_Device_Key)
-        self.mqtt_state = 'DISCONNECTED'
+        if not IoTMQTTClient().do_one_connect(Hub_Product_ID, Hub_Device_Name, Hub_Device_Key):
+            test_result = "- ####" + test_item + ": 模拟设备断线失败"
+            cmd_err_cnt += 1
+        else:
+            self.mqtt_state = 'DISCONNECTED'
 
-        # 等待状态改变
-        time.sleep(self.cmd_timeout)
-        while not self.is_mqtt_connected() and self.mqtt_state != 'CONNECTED':
+            # 等待状态改变
             time.sleep(self.cmd_timeout)
+            while not self.is_mqtt_connected() and self.mqtt_state != 'CONNECTED':
+                time.sleep(self.cmd_timeout)
 
-        # if not self.subscribe_normal_topic('data', 0, self.payload_queue_handler):
-        #     self.serial.output_record(self.report_file)
-        #     self.log_record("##### MQTT订阅指令执行失败")
-        #     cmd_err_cnt += 1
-
-        if not self.subscribe_topic_query():
-            self.serial.output_record(self.report_file)
-            self.log_record("##### 重连后查询MQTT已订阅主题指令执行失败或结果不正确")
-            cmd_err_cnt += 1
-
-        send_payload = "Hello world!"
-        if not self.publish_normal_msg('data', 0, send_payload):
-            self.serial.output_record(self.report_file)
-            self.log_record("##### 重连后MQTT发布消息指令执行失败")
-            cmd_err_cnt += 1
-        elif not self.wait_for_pub_msg_return(send_payload):
-            self.serial.output_record(self.report_file)
-            self.log_record("##### 重连后MQTT接收消息失败")
-            cmd_err_cnt += 1
-
-        self.serial.output_record(self.report_file)
-
-        for key, value in self.mqtt_urc_recv.items():
-            if not value:
-                self.log_record("##### MQTT URC缺失： " + key)
+            if not self.subscribe_topic_query():
+                self.serial.output_record(self.report_file)
+                self.log_record("##### 重连后查询MQTT已订阅主题指令执行失败或结果不正确")
                 cmd_err_cnt += 1
 
-        if cmd_err_cnt == 0:
-            test_result = "- ####" + test_item + ": 通过"
-        else:
-            test_result = "- ####" + test_item + ": 失败"
+            send_payload = "Hello_From_"+self.at_module
+            if not self.publish_normal_msg('data', 0, send_payload):
+                self.serial.output_record(self.report_file)
+                self.log_record("##### 重连后MQTT发布消息指令执行失败")
+                cmd_err_cnt += 1
+            elif not self.wait_for_pub_msg_return(send_payload):
+                self.serial.output_record(self.report_file)
+                self.log_record("##### 重连后MQTT接收消息失败")
+                cmd_err_cnt += 1
+
+            self.serial.output_record(self.report_file)
+
+            for key, value in self.mqtt_urc_recv.items():
+                if not value:
+                    self.log_record("##### MQTT URC缺失： " + key)
+                    cmd_err_cnt += 1
+
+            if cmd_err_cnt == 0:
+                test_result = "- ####" + test_item + ": 通过"
+            else:
+                test_result = "- ####" + test_item + ": 失败"
 
         self.log_record(test_result)
         self.log_record("--------------------------------------------")
@@ -1692,7 +1739,7 @@ class IoTHubATTest(IoTBaseATCmd):
                 crt_content = crt_file.read()
                 if not self.certadd_setup(CERT_Crt_File, crt_content):
                     self.serial.output_record(self.report_file)
-                    self.log_record("##### 添加设备证书指令执行失败")
+                    self.log_record("##### 添加设备公钥证书指令执行失败")
                     cmd_err_cnt += 1
                     break
 
@@ -1700,7 +1747,7 @@ class IoTHubATTest(IoTBaseATCmd):
                 crt_content = crt_file.read()
                 if not self.certadd_setup(CERT_Key_File, crt_content):
                     self.serial.output_record(self.report_file)
-                    self.log_record("##### 添加设备证书指令执行失败")
+                    self.log_record("##### 添加设备私钥证书指令执行失败")
                     cmd_err_cnt += 1
                     break
 
@@ -1712,6 +1759,18 @@ class IoTHubATTest(IoTBaseATCmd):
                 cmd_err_cnt += 1
                 break
 
+            if not self.certcheck_setup(CERT_Crt_File):
+                self.serial.output_record(self.report_file)
+                self.log_record("##### 校验设备公钥证书指令执行失败")
+                cmd_err_cnt += 1
+                break
+
+            if not self.certcheck_setup(CERT_Key_File):
+                self.serial.output_record(self.report_file)
+                self.log_record("##### 校验设备私钥证书指令执行失败")
+                cmd_err_cnt += 1
+                break
+
             if not self.devinfo_setup(CERT_Product_ID, CERT_Device_Name, CERT_Crt_File, tls=2):
                 self.serial.output_record(self.report_file)
                 self.log_record("##### 证书设备信息设置指令执行失败")
@@ -1720,21 +1779,51 @@ class IoTHubATTest(IoTBaseATCmd):
 
             if not self.mqtt_connect():
                 self.serial.output_record(self.report_file)
-                self.log_record("##### MQTT连接指令执行失败")
+                self.log_record("##### 证书设备MQTT连接指令执行失败")
                 cmd_err_cnt += 1
                 break
 
             if not self.is_mqtt_connected():
                 self.serial.output_record(self.report_file)
-                self.log_record("##### 查询MQTT连接状态指令执行失败")
+                self.log_record("##### 证书设备查询MQTT连接状态指令执行失败")
                 cmd_err_cnt += 1
 
-            time.sleep(1)
+            if not self.subscribe_normal_topic('data', 0, self.payload_queue_handler):
+                self.serial.output_record(self.report_file)
+                self.log_record("##### 证书设备MQTT订阅指令执行失败")
+                cmd_err_cnt += 1
+
+            send_payload = get_hub_test_msg().replace('\n', '')
+            if not self.publish_normal_msg('data', 1, send_payload):
+                self.serial.output_record(self.report_file)
+                self.log_record("##### 证书设备MQTT QoS1发布JSON消息指令执行失败")
+                cmd_err_cnt += 1
+            elif not self.wait_for_pub_msg_return(send_payload):
+                self.serial.output_record(self.report_file)
+                self.log_record("##### 证书设备MQTT 接收JSON消息失败")
+                cmd_err_cnt += 1
 
             if not self.mqtt_disconnect():
                 self.serial.output_record(self.report_file)
-                self.log_record("##### MQTT断开连接指令执行失败")
+                self.log_record("##### 证书设备MQTT断开连接指令执行失败")
                 cmd_err_cnt += 1
+
+            if self.is_mqtt_connected():
+                self.serial.output_record(self.report_file)
+                self.log_record("##### 证书设备查询MQTT断开状态指令执行失败")
+                cmd_err_cnt += 1
+
+            if not self.certdel_setup(CERT_Crt_File):
+                self.serial.output_record(self.report_file)
+                self.log_record("##### 删除设备公钥证书指令执行失败")
+                cmd_err_cnt += 1
+                break
+
+            if not self.certdel_setup(CERT_Key_File):
+                self.serial.output_record(self.report_file)
+                self.log_record("##### 删除设备私钥证书指令执行失败")
+                cmd_err_cnt += 1
+                break
 
             break
 
@@ -1754,7 +1843,7 @@ class IoTHubATTest(IoTBaseATCmd):
 
         self.set_report_file(file_out)
         self.serial.start_record()
-        self.hub_payload_queue = queue.Queue()
+
         total_err_cnt = 0
         test_result_list = []
         extra_result_list = []
@@ -1817,12 +1906,12 @@ class IoTHubATTest(IoTBaseATCmd):
 
                 test_case_cnt += 1
                 self.log_record("--------------------------------------------")
-                cmd_err_cnt, test_result = self.test_case_regnet(test_case_cnt)
+                cmd_err_cnt, test_result = self.test_case_cert(test_case_cnt)
                 extra_result_list.append(test_result)
 
                 test_case_cnt += 1
                 self.log_record("--------------------------------------------")
-                cmd_err_cnt, test_result = self.test_case_cert(test_case_cnt)
+                cmd_err_cnt, test_result = self.test_case_regnet(test_case_cnt)
                 extra_result_list.append(test_result)
 
                 test_case_cnt += 1
@@ -1876,7 +1965,7 @@ class IoTHubATTest(IoTBaseATCmd):
         if not self.devinfo_setup(Hub_Product_ID, Hub_Device_Name, Hub_Device_Key):
             return False
 
-        if self.at_module == 'ESP8266':
+        if self.conn_mqtt_before_ota == 'yes':
             if not self.mqtt_connect():
                 return False
 
@@ -2117,8 +2206,6 @@ class IoTExplorerATTest(IoTBaseATCmd):
                     break
 
                 if cmd.lower() == 'update':
-                    #self.get_template_data()
-                    #time.sleep(0.5)
                     self.publish_template_msg(gen_template_update_msg())
 
                 if cmd.lower() == 'event':
@@ -2148,16 +2235,22 @@ class IoTMQTTClient:
     def do_one_connect(self, ProductId, DeviceName, DevicePsk):
         ret = self.IotHmac_sha1(ProductId, DeviceName, DevicePsk)
         logging.info("PAHO-MQTT prepare client " + ret["clientid"])
-        mqttc = mqtt.Client(client_id=ret["clientid"])
-        mqttc.on_connect = on_connect
-        mqttc.username_pw_set(ret["username"], ret["password"])
+        try:
+            mqttc = mqtt.Client(client_id=ret["clientid"])
+            mqttc.on_connect = on_connect
+            mqttc.username_pw_set(ret["username"], ret["password"])
 
-        logging.info("PAHO-MQTT start connection with " + ret["host"])
-        mqttc.connect(ret["host"], 1883, 60)
-        mqttc.loop_start()
-        time.sleep(2)
-        mqttc.loop_stop()  # stop the loop
-        logging.info("PAHO-MQTT stop")
+            logging.info("PAHO-MQTT start connection with " + ret["host"])
+            mqttc.connect(ret["host"], 1883, 60)
+            mqttc.loop_start()
+            time.sleep(2)
+            mqttc.loop_stop()  # stop the loop
+            logging.info("PAHO-MQTT stop")
+            return True
+        except TimeoutError:
+            logging.info("PAHO-MQTT connect with " + ret["host"] + " timeout!")
+            return False
+
 
     def IotHmac_sha1(self, productid, devicename, devicekey):
         # 1. 生成connid为一个随机字符串,方便后台定位问题
@@ -2383,7 +2476,7 @@ def cell_network_connect(at_module):
 def at_module_network_connect(at_module, WiFi_SSID, WiFi_PSWD):
     if at_module == 'ESP8266':
         return ESPWiFiATCmd().do_network_connection(WiFi_SSID, WiFi_PSWD)
-    elif 'N10' in at_module or 'N21' in at_module:
+    elif at_module in ['N21', 'N10', 'M6315']:
         return cell_network_connect(at_module)
     else:
         return True
@@ -2411,7 +2504,7 @@ def main():
     test_mode_group = parser.add_argument_group('AT commands mode parameters')
     test_mode_group.add_argument(
             "--mode", "-m", required=True,
-            help="Test mode: CLI/MQTT/IOT/WIFI/HUB/IE/OTA")
+            help="Test mode: CLI/MQTT/IOT/WIFI/HUB/IE/OTA/CERT")
 
     test_mode_group.add_argument(
         "--at_module", "-a",
@@ -2472,7 +2565,7 @@ def main():
     prdinfo = args.prdinfo.upper()
     config_file_path = args.config_file_path
 
-    if not test_mode in ['CLI', 'MQTT', 'IOT', 'WIFI', 'HUB', 'OTA', 'IE']:
+    if not test_mode in ['CLI', 'MQTT', 'IOT', 'WIFI', 'HUB', 'OTA', 'IE', 'CERT']:
         print("Invalid test mode", test_mode)
         return
 
@@ -2571,14 +2664,18 @@ def main():
 
         # IoT Hub test
         if test_mode == 'HUB':
-            if loop:
-                IoTHubATTest(at_module).iot_hub_loop_test(loop, loop_cnt)
+            IoTHubATTest(at_module).iot_hub_loop_test(loop, loop_cnt)
             break
 
         # IoT Hub OTA test
         if test_mode == 'OTA':
             if IoTHubATTest(at_module).ota_update_test(OTA_local_version):
                 IoTHubATTest(at_module).ota_read_test()
+            break
+
+        # IoT Hub cert device test
+        if test_mode == 'CERT':
+            IoTHubATTest(at_module).test_case_cert(0)
             break
 
         # IoT Explorer test

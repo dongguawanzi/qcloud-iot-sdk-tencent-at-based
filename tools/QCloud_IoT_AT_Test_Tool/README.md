@@ -58,6 +58,9 @@ IoT Hub平台设备测试还需要到控制台权限列表创建一个具备发�
 #### OTA: 固件下载及读取测试
 对IoT Hub设备进行OTA升级测试，并将成功获取到的固件保存到本地文件
 
+#### CERT: 证书设备测试
+对IoT Hub创建的证书设备进行证书添加校验删除等测试，并连接MQTT服务进行收发包测试
+
 ### 5. AT模组配置:
 配置文件里面包括了部分已验证模组的配置信息，如新的模组在转义字符处理及AT指令长度限制等等与不一致，则需要在配置文件中增加模组配置
 对于转义字符处理，建议的处理是对payload部分的双引号进行转义，如按以下AT指令方式进行MQTT消息发布
@@ -71,6 +74,9 @@ AT+TCMQTTPUB="S3EUVBRJLB/device1/data",0,"{\"action\":\"publish_test\",\"count\"
 | add_no_escapes              | 对源数据不加任何转义处理 |
 | add_escapes_for_quote       | 对源数据里面的双引号“前面添加转义字符\ |
 | add_escapes_for_quote_comma | 对源数据里面的双引号“和逗号,前面添加转义字符\ |
+
+如果模组由于实现限制，在PUB消息时不支持多行的payload（以'\n'分隔），可以在配置文件中将support_multiline_payload设为no（默认为yes）
+如果模组由于实现限制，在进行OTA时需要先连接MQTT，可以在配置文件中将conn_mqtt_before_ota设为yes（默认为no）
 
 ### 6. 使用示例：
 工具帮助信息：
